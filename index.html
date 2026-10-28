@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Anime Ice Cream</title>
+
+    <!-- ===== VK BRIDGE ===== -->
+    <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+
+    <style>
+        * {
+            margin: 0; padding: 0; box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        html, body {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+        body { background: #0a0a1a; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden; height: 100vh; display: flex; justify-content: center; align-items: center; }
+
+        /* Экран загрузки */
+        #loadingScreen {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #0a0a1a; z-index: 9999;
+            display: flex; justify-content: center; align-items: center;
+            color: #ff88ff; font-size: 24px; font-weight: bold;
+            flex-direction: column; gap: 20px;
+        }
+        .spinner {
+            width: 50px; height: 50px; border: 5px solid #ff88ff33;
+            border-top: 5px solid #ff88ff; border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        #game {
+            width: 100vw; height: 100vh;
+            max-width: 1100px;
+            background: #0d0d1f;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            pointer-events: none;
+        }
+        #game.ready {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .character-box {
+            flex: 1; height: 100%; position: relative; cursor: pointer; overflow: hidden;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .character-box::before {
+            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: url('img/bg.jpg') center/cover no-repeat; opacity: 0.7; z-index: 0;
+        }
+
+        .avatar {
+            width: 100%; height: 100%;
+            background-size: contain; background-repeat: no-repeat; background-position: center center;
+            position: relative; z-index: 2;
+            filter: drop-shadow(0 0 30px rgba(255, 68, 255, 0.5));
+            transition: background-image 0.1s ease;
+            will-change: transform;
+            pointer-events: none;
+        }
+
+        .avatar.shake { animation: shakeSoft 0.08s infinite alternate; }
+        @keyframes shakeSoft {
+            0% { transform: translate(0px, 0px) rotate(0deg) scale(1); }
+            100% { transform: translate(-0.5px, 0.5px) rotate(-0.2deg) scale(0.995); }
+        }
+
+        .drop {
+            position: absolute;
+            width: 34px;
+            height: 34px;
+            border-radius: 42% 58% 55% 45% / 48% 42% 58% 52%;
+            transform: translate(-50%, -50%) scale(0);
+            pointer-events: none;
+            z-index: 50;
+            animation: splash 0.8s ease-out forwards;
+            filter: blur(0.2px) drop-shadow(0 0 10px currentColor) drop-shadow(0 0 3px currentColor);
+            will-change: transform, opacity;
+        }
+        @keyframes splash {
+            0%   { transform: translate(-50%, -50%) scale(0.3) rotate(0deg);   opacity: 1; }
+            35%  { transform: translate(-50%, -50%) scale(1.5) rotate(35deg);  opacity: 1; border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%; }
+            70%  { opacity: 0.95; }
+            100% { transform: translate(-50%, -50%) scale(3.8) rotate(120deg); opacity: 0; }
+        }
+
+        .splash-particle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            pointer-events: none;
+            z-index: 49;
+            animation: splashParticle 0.75s ease-out forwards;
+            filter: drop-shadow(0 0 8px currentColor);
+            will-change: transform, opacity;
+        }
+        @keyframes splashParticle {
+            0%   { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+            70%  { opacity: 1; }
+            100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.2); opacity: 0; }
+        }
+
+        .header {
+            position: absolute; top: 20px; left: 0; right: 0; z-index: 100;
+            display: flex; justify-content: center; align-items: center;
+            padding: 10px 30px;
+            pointer-events: none;
+        }
+        .coin-display {
+            color: #fff; font-weight: 900; font-size: 36px;
+            text-shadow: 0 2px 6px #000, 0 0 20px rgba(255, 204, 0, 0.5);
+        }
+
+        .level-panel {
+            position: absolute; bottom: 20px; left: 20px; z-index: 100;
+            background: rgba(10, 10, 30, 0.9); border: 1px solid #ff88ff; border-radius: 16px;
+            padding: 12px 16px; pointer-events: none; text-align: center;
+        }
+        .level-title { font-size: 18px; font-weight: 900; color: #fff; text-shadow: 0 0 10px #ff88ff; }
+        .level-bar { width: 170px; height: 10px; background: #000; border-radius: 10px; margin-top: 8px; overflow: hidden; border: 1px solid #ff88ff55; }
+        .level-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff88ff, #cc22ff); border-radius: 10px; }
+        .level-text { font-size: 12px; color: #aaccff; margin-top: 5px; font-weight: bold; }
+
+        .audio-controls {
+            position: absolute; bottom: 20px; right: 20px; z-index: 100;
+            display: flex; gap: 8px;
+        }
+        .audio-btn {
+            padding: 12px 16px; border-radius: 14px; font-weight: 900; font-size: 14px;
+            cursor: pointer; border: 2px solid #66aaff66; color: #fff;
+            background: linear-gradient(135deg, #3366ff, #2244cc);
+            transition: 0.2s; white-space: nowrap;
+        }
+        .audio-btn:active { transform: scale(0.95); }
+        .audio-btn.off {
+            background: linear-gradient(135deg, #444455, #222233);
+            border-color: #66667766;
+            color: #8888aa;
+            filter: grayscale(1);
+        }
+
+        .auto-rate {
+            position: absolute; bottom: 110px; left: 20px;
+            background: rgba(50, 255, 100, 0.9); border: 2px solid #00ff00;
+            border-radius: 12px; color: #000; font-weight: 900;
+            font-size: 18px; padding: 8px 15px;
+            text-shadow: 0 1px 0 #fff;
+            z-index: 100; pointer-events: none;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+        }
+
+        .money-popup {
+            position: absolute;
+            color: #ff4466;
+            font-weight: 900;
+            font-size: 22px;
+            text-shadow: 0 2px 4px #000;
+            pointer-events: none;
+            animation: popMoney 1s forwards;
+            z-index: 200;
+        }
+        @keyframes popMoney {
+            0% { opacity: 1; transform: translate(-50%, 0); }
+            100% { opacity: 0; transform: translate(-50%, -50px); }
+        }
+
+        .side-wrap {
+            width: 340px; height: 100%;
+            display: flex; flex-direction: column;
+            background: #111125;
+            border-left: 2px solid #ff88ff33;
+            z-index: 10; position: relative;
+        }
+
+        .shop-header {
+            display: flex; justify-content: center; align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            gap: 15px;
+        }
+        .switch-btn {
+            background: #1a1a3a; border: 1px solid #44448855; color: #8888bb;
+            padding: 10px 20px; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 16px;
+        }
+        .switch-btn.active { background: #3a2a6a; color: #fff; border-color: #ff88ff; box-shadow: 0 0 10px #ff88ff55; }
+
+        .shop-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .shop-list::-webkit-scrollbar { width: 4px; }
+        .shop-list::-webkit-scrollbar-track { background: #0a0a1a; }
+        .shop-list::-webkit-scrollbar-thumb { background: #ff44aa; border-radius: 10px; }
+
+        .shop-item {
+            background: #0d0d2a; border-radius: 12px; padding: 12px; margin-bottom: 10px;
+            border: 1px solid #44448855; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        }
+        .shop-item.locked-item { opacity: 0.7; }
+        .shop-item .info { flex: 1; min-width: 0; }
+        .shop-item .name { font-weight: 900; color: #fff; font-size: 15px; }
+        .shop-item .desc { color: #8888bb; font-size: 12px; margin-top: 2px; }
+        .shop-item .price { color: #ffbb44; font-weight: 900; font-size: 15px; white-space: nowrap; }
+        .shop-item .buy-btn {
+            padding: 8px 12px; border: none; border-radius: 10px;
+            background: linear-gradient(135deg, #ff44aa, #cc22ff); color: white;
+            font-weight: bold; cursor: pointer; font-size: 13px; min-width: 90px;
+        }
+        .shop-item .buy-btn:disabled { opacity: 0.4; filter: grayscale(1); cursor: not-allowed; }
+
+        .girl-card { background: #0d0d2a; border-radius: 14px; padding: 10px; text-align: center; border: 2px solid transparent; cursor: pointer; position: relative; }
+        .girl-card.active { border-color: #ff88ff; box-shadow: 0 0 30px #ff44ff55; }
+        .girl-card.locked { opacity: 0.5; filter: grayscale(0.8); }
+        .girl-card.special { border-color: #ffcc00; box-shadow: 0 0 20px #ffcc0055; }
+        .girl-card.special::after {
+            content: '⭐';
+            position: absolute; top: 4px; right: 6px;
+            font-size: 14px;
+            filter: drop-shadow(0 0 4px #ffcc00);
+        }
+        .girl-avatar {
+            width: 50px; height: 50px; border-radius: 50%; margin: 0 auto 6px;
+            background: #2a2a5a; display: flex; align-items: center; justify-content: center; font-size: 24px;
+        }
+        .girl-name { font-size: 13px; font-weight: bold; color: #fff; }
+        .girl-status { font-size: 10px; color: #8888bb; margin-top: 4px; }
+        .girl-status.special-status { color: #ffcc00; font-weight: 900; }
+
+        .girls-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 10px; overflow-y: auto; }
+
+        .action-panel { padding: 10px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+        .action-btn {
+            padding: 14px 12px; background: rgba(20, 20, 40, 0.95); border: 2px solid #66aaff66;
+            border-radius: 16px; color: #fff; font-size: 15px; font-weight: 900; cursor: pointer; text-align: center;
+            transition: 0.2s; line-height: 1.2;
+        }
+        .action-btn small { display: block; font-size: 11px; font-weight: 600; opacity: 0.75; margin-top: 3px; }
+        .action-btn:active { transform: scale(0.95); }
+        .action-btn.spec { background: linear-gradient(135deg, #8800ff, #4400ff); border-color: #aa55ff; }
+        .action-btn.reklama_gold { background: linear-gradient(135deg, #ffaa00, #ff6600); border-color: #ffdd00; animation: pulseBtn 0.8s infinite; }
+        .action-btn.bonus-active { background: linear-gradient(135deg, #44aa44, #228822); border-color: #00ff00; animation: pulseBtn 0.3s infinite; }
+        .action-btn.spec-active { background: linear-gradient(135deg, #ff4400, #cc2200); border-color: #ff8800; animation: pulseBtn 0.5s infinite; }
+
+        .ad-notification {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.92); color: #ffbbff; padding: 15px 30px;
+            border-radius: 20px; font-size: 18px; font-weight: bold; z-index: 500;
+            border: 2px solid #ff88ff; text-align: center; animation: fadeInNotif 0.3s ease; pointer-events: none;
+        }
+
+        @keyframes pulseBtn { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        @keyframes fadeInNotif { from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+
+        @media (max-width: 800px) {
+            #game { flex-direction: column; }
+            .character-box { width: 100%; height: 50%; }
+            .side-wrap { width: 100%; height: 50%; border-left: none; border-top: 2px solid #ff88ff33; }
+            .action-panel { flex-direction: row; }
+            .action-btn { flex: 1; padding: 8px 6px; font-size: 12px; }
+            .action-btn small { font-size: 9px; }
+            .level-panel { bottom: 55%; left: 10px; padding: 8px; }
+            .header { top: 5px; }
+            .coin-display { font-size: 24px; }
+            .auto-rate { bottom: 65%; left: 10px; font-size: 14px; }
+            .audio-controls { bottom: 55%; right: 10px; flex-wrap: wrap; }
+            .audio-btn { padding: 8px 12px; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Экран загрузки -->
+<div id="loadingScreen">
+    <div class="spinner"></div>
+    <div>Загрузка...</div>
+</div>
+
+<div id="game">
+    <div class="character-box" id="characterBox">
+        <div id="characterAvatar" class="avatar"></div>
+
+        <div class="level-panel">
+            <div class="level-title">Уровень <span id="levelNum">1</span></div>
+            <div class="level-bar"><div id="levelFill" class="level-fill"></div></div>
+            <div class="level-text"><span id="levelClicks">0</span> / <span id="levelTarget">100</span> кликов</div>
+        </div>
+
+        <div class="audio-controls">
+            <button id="musicToggle" class="audio-btn">🔊 Музыка</button>
+            <button id="soundToggle" class="audio-btn">🔊 Звуки</button>
+        </div>
+
+        <div class="auto-rate" id="autoRateDisplay">+0 монет/сек</div>
+
+        <div class="header">
+            <div class="coin-display">
+                <span id="money">0</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="side-wrap">
+        <div class="shop-header">
+            <button class="switch-btn active" id="btnShop">Бусты</button>
+            <button class="switch-btn" id="btnGirls">Девушки</button>
+        </div>
+
+        <div class="shop-list" id="shopItems"></div>
+
+        <div class="action-panel">
+            <button id="adSpecBtn" class="action-btn spec">
+                🔥 СПЕЦ-ПОЗА
+                <small>за просмотр рекламы</small>
+            </button>
+            <button id="adBonusBtn" class="action-btn reklama_gold">
+                📺 БОНУС x2
+                <small>за просмотр рекламы</small>
+            </button>
+            <button id="adMoneyBtn" class="action-btn" style="background: linear-gradient(135deg, #ffaa00, #ff6600);">
+                📺 +2500 монет
+                <small>за просмотр рекламы</small>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ============================================================
+    //  ОТКЛЮЧЕНИЕ КОНТЕКСТНОГО МЕНЮ И ВЫДЕЛЕНИЯ
+    // ============================================================
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('selectstart', (e) => e.preventDefault());
+    document.addEventListener('dragstart', (e) => e.preventDefault());
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    document.addEventListener('dblclick', (e) => e.preventDefault());
+
+    const _cb = document.getElementById('characterBox');
+    if (_cb) _cb.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // ============================================================
+    //  VK BRIDGE (ИНИЦИАЛИЗАЦИЯ)
+    // ============================================================
+    let vkReady = false;
+    let isAdShowing = false; // Защита от двойного клика по рекламе
+
+    function initVKBridge() {
+        const loadingScreen = document.getElementById('loadingScreen');
+        const gameDiv = document.getElementById('game');
+
+        const finishLoading = () => {
+            loadingScreen.style.display = 'none';
+            gameDiv.classList.add('ready');
+        };
+
+        // Если vkBridge не загрузился (локальный запуск) — просто показываем игру
+        if (typeof vkBridge === 'undefined') {
+            console.log('🧩 VK Bridge не найден — играем локально');
+            finishLoading();
+            return;
+        }
+
+        // Отправляем обязательное событие инициализации
+        vkBridge.send('VKWebAppInit')
+            .then(() => {
+                console.log('✅ VK Bridge инициализирован');
+                vkReady = true;
+                finishLoading();
+            })
+            .catch((err) => {
+                console.warn('❌ Ошибка VK Bridge:', err);
+                finishLoading(); // Даем поиграть хотя бы локально
+            });
+    }
+
+    // ============================================================
+    //  РЕКЛАМА — VK Rewarded Video
+    // ============================================================
+    function showRewarded(onReward) {
+        if (isAdShowing) return;
+        isAdShowing = true;
+
+        const finishAd = () => { isAdShowing = false; };
+
+        // Если VK Bridge нет (локальный запуск) — выдаём награду сразу
+        if (!vkReady || typeof vkBridge === 'undefined') {
+            console.log('Локальный режим: награда без рекламы');
+            onReward();
+            finishAd();
+            return;
+        }
+
+        // Ставим музыку на паузу на время рекламы
+        const wasMusicPlaying = audio.bg && !audio.bg.paused;
+        if (wasMusicPlaying) audio.bg.pause();
+
+        const resumeMusic = () => {
+            if (wasMusicPlaying && audio.musicOn && audio.bgStarted && state.isPageVisible) {
+                audio.bg.play().catch(() => {});
+            }
+        };
+
+        // Вызов рекламы ВК (формат reward — за вознаграждение)
+        vkBridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' })
+            .then((data) => {
+                if (data.result) {
+                    console.log('🎁 Награда засчитана');
+                    onReward();
+                } else {
+                    console.log('Реклама не была показана до конца');
+                }
+                resumeMusic();
+                finishAd();
+            })
+            .catch((err) => {
+                console.warn('Ошибка показа рекламы VK:', err);
+                resumeMusic();
+                finishAd();
+                showNotification('⚠️ Не удалось показать рекламу. Попробуйте позже.');
+            });
+    }
+
+    // ============================================================
+    //  АУДИО
+    // ============================================================
+    const audio = {
+        bg: null,
+        sfx: [],
+        bgStarted: false,
+        musicOn: true,
+        soundOn: true,
+        bgVolume: 0.35,
+        sfxVolume: 0.55,
+        sfxChance: 0.1,
+    };
+
+    function initAudio() {
+        audio.bg = new Audio('audio/Miami_Viceroy.mp3');
+        audio.bg.loop = true;
+        audio.bg.volume = audio.bgVolume;
+        audio.bg.preload = 'auto';
+
+        const sfxFiles = [
+            'audio/001_meow.wav',
+            'audio/003_meow.wav',
+            'audio/007_meow.wav',
+            'audio/003_jump.wav',
+            'audio/005_jump.wav',
+            'audio/005_swing.wav',
+            'audio/007_swing.wav',
+        ];
+        audio.sfx = sfxFiles.map(src => {
+            const a = new Audio(src);
+            a.volume = audio.sfxVolume;
+            a.preload = 'auto';
+            return a;
+        });
+    }
+
+    function startBgMusic() {
+        if (!audio.musicOn) return;
+        if (audio.bgStarted || !audio.bg) return;
+        audio.bg.play().then(() => {
+            audio.bgStarted = true;
+        }).catch(err => {
+            console.log('Музыка пока не запущена (ждём клика):', err);
+        });
+    }
+
+    function playRandomSfx() {
+        if (!audio.soundOn) return;
+        if (Math.random() > audio.sfxChance) return;
+        if (!audio.sfx.length) return;
+
+        const original = audio.sfx[Math.floor(Math.random() * audio.sfx.length)];
+        const s = original.cloneNode();
+        s.volume = audio.sfxVolume;
+        s.play().catch(() => {});
+    }
+
+    initAudio();
+
+    // ============================================================
+    //  СОХРАНЕНИЕ
+    // ============================================================
+    const SAVE_KEY = 'anime_ice_cream_save_v5';
+
+    function defaultState() {
+        return {
+            money: 0,
+            totalClicks: 0,
+            level: 1,
+            levelClicks: 0,
+            levelTarget: 100,
+            autoClickLevel: 0,
+            autoClickPurchases: 0,
+            mouseClickLevel: 1,
+            autoClickTier2: false,
+            autoClickTier3: false,
+            autoClickTier4: false,
+            ownedGirls: [true, false, false, false, false, false],
+            girlIndex: 0,
+        };
+    }
+
+    function collectSaveObject() {
+        return {
+            money: state.money,
+            totalClicks: state.totalClicks,
+            level: state.level,
+            levelClicks: state.levelClicks,
+            levelTarget: state.levelTarget,
+            autoClickLevel: state.autoClickLevel,
+            autoClickPurchases: state.autoClickPurchases,
+            mouseClickLevel: state.mouseClickLevel,
+            autoClickTier2: state.autoClickTier2,
+            autoClickTier3: state.autoClickTier3,
+            autoClickTier4: state.autoClickTier4,
+            ownedGirls: state.ownedGirls,
+            girlIndex: state.girlIndex,
+        };
+    }
+
+    function loadState() {
+        try {
+            const raw = localStorage.getItem(SAVE_KEY);
+            if (!raw) return defaultState();
+            const data = JSON.parse(raw);
+            const def = defaultState();
+            const merged = Object.assign({}, def, data);
+            if (!Array.isArray(merged.ownedGirls) || merged.ownedGirls.length !== 6) {
+                merged.ownedGirls = def.ownedGirls.slice();
+            }
+            return merged;
+        } catch (e) {
+            console.warn('Не удалось загрузить сохранение:', e);
+            return defaultState();
+        }
+    }
+
+    function applyLoadedState(loaded) {
+        const def = defaultState();
+        const merged = Object.assign({}, def, loaded);
+        if (!Array.isArray(merged.ownedGirls) || merged.ownedGirls.length !== 6) {
+            merged.ownedGirls = def.ownedGirls.slice();
+        }
+        Object.assign(state, merged);
+        updateUI();
+    }
+
+    function saveState() {
+        try {
+            localStorage.setItem(SAVE_KEY, JSON.stringify(collectSaveObject()));
+        } catch (e) {
+            console.warn('Не удалось сохранить локально:', e);
+        }
+        // ВК: сохранение в облако можно добавить позже через VKWebAppStorageSet
+    }
+
+    // ============================================================
+    //  СОСТОЯНИЕ
+    // ============================================================
+    const state = Object.assign(loadState(), {
+        isWinMode: false,
+        specMode: false,
+        specTimer: 0,
+        adBonusActive: false,
+        adBonusTimer: 0,
+        currentPanel: 'shop',
+        isActive: false,
+        idleTimer: null,
+        isPageVisible: true,
+    });
+
+    // ===== ДАННЫЕ =====
+    const girls = [
+        { name: 'Японка',    emoji: '👘', cost: 0,     sprite: 'japan',  special: false },
+        { name: 'Горничная', emoji: '🫖', cost: 2500,  sprite: 'house',  special: false },
+        { name: 'Ведьма',    emoji: '🎃', cost: 5000,  sprite: 'pumpk',  special: false },
+        { name: 'Неко',      emoji: '🐱', cost: 7500,  sprite: 'neko',   special: false },
+        { name: 'Ангел',     emoji: '😇', cost: 11000, sprite: 'angel',  special: false },
+        { name: '????',      emoji: '❓', cost: 14000, sprite: 'beach',  special: true  },
+    ];
+
+    const girlsUnlockLevel = [1, 3, 5, 6, 8, 9];
+
+    // ===== DOM =====
+    const character = document.getElementById('characterAvatar');
+    const characterBox = document.getElementById('characterBox');
+    const moneySpan = document.getElementById('money');
+    const levelNum = document.getElementById('levelNum');
+    const levelFill = document.getElementById('levelFill');
+    const levelClicks = document.getElementById('levelClicks');
+    const levelTarget = document.getElementById('levelTarget');
+    const autoRateDisplay = document.getElementById('autoRateDisplay');
+    
+    const shopItems = document.getElementById('shopItems');
+    const btnShop = document.getElementById('btnShop');
+    const btnGirls = document.getElementById('btnGirls');
+    const adBonusBtn = document.getElementById('adBonusBtn');
+    const adSpecBtn = document.getElementById('adSpecBtn');
+    const adMoneyBtn = document.getElementById('adMoneyBtn');
+    const musicToggle = document.getElementById('musicToggle');
+    const soundToggle = document.getElementById('soundToggle');
+
+    // ============================================================
+    //  КНОПКИ АУДИО
+    // ============================================================
+    musicToggle.addEventListener('click', () => {
+        audio.musicOn = !audio.musicOn;
+        if (audio.musicOn) {
+            musicToggle.classList.remove('off');
+            musicToggle.textContent = '🔊 Музыка';
+            if (audio.bgStarted && state.isPageVisible) {
+                audio.bg.play().catch(() => {});
+            } else if (state.isPageVisible) {
+                startBgMusic();
+            }
+        } else {
+            musicToggle.classList.add('off');
+            musicToggle.textContent = '🔇 Музыка';
+            if (audio.bg) audio.bg.pause();
+        }
+    });
+
+    soundToggle.addEventListener('click', () => {
+        audio.soundOn = !audio.soundOn;
+        if (audio.soundOn) {
+            soundToggle.classList.remove('off');
+            soundToggle.textContent = '🔊 Звуки';
+        } else {
+            soundToggle.classList.add('off');
+            soundToggle.textContent = '🔇 Звуки';
+        }
+    });
+
+    // ============================================================
+    //  СПРАЙТЫ И АНИМАЦИИ
+    // ============================================================
+    function getSpriteName() {
+        const girl = girls[state.girlIndex] || girls[0];
+        const girlSprite = girl.sprite;
+
+        if (state.isWinMode) return `win_${girlSprite}`;
+        if (state.specMode) return state.isActive ? `spec_lick_${girlSprite}` : `spec_idle_${girlSprite}`;
+        return state.isActive ? `lick_${girlSprite}` : `idle_${girlSprite}`;
+    }
+
+    function updateSprite() {
+        const sprite = getSpriteName();
+        character.style.backgroundImage = `url('img/${sprite}.jpg')`;
+        character.style.backgroundSize = 'contain';
+        character.style.backgroundRepeat = 'no-repeat';
+        character.style.backgroundPosition = 'center center';
+    }
+
+    updateSprite();
+
+    function setActiveState() {
+        if (state.idleTimer) clearTimeout(state.idleTimer);
+        if (!state.isActive) {
+            state.isActive = true;
+            updateSprite();
+            character.classList.add('shake');
+        }
+    }
+
+    function setIdleState() {
+        if (state.idleTimer) clearTimeout(state.idleTimer);
+        state.idleTimer = setTimeout(() => {
+            if (state.isActive) {
+                state.isActive = false;
+                character.classList.remove('shake');
+                updateSprite();
+            }
+        }, 800);
+    }
+
+    function forceIdleState() {
+        if (state.idleTimer) clearTimeout(state.idleTimer);
+        state.isActive = false;
+        character.classList.remove('shake');
+        updateSprite();
+    }
+
+    // ============================================================
+    //  ЭКОНОМИКА
+    // ============================================================
+    function getAutoRate() {
+        let baseRate = state.autoClickLevel;
+        if (state.autoClickTier2) baseRate += 5;
+        if (state.autoClickTier3) baseRate += 15;
+        if (state.autoClickTier4) baseRate += 35;
+
+        let finalRate = baseRate;
+        if (state.specMode) finalRate *= 2;
+        if (state.adBonusActive) finalRate *= 2;
+        return finalRate;
+    }
+
+    function getClickValue() {
+        let clickMoney = 5 + (state.mouseClickLevel - 1);
+        if (state.specMode) clickMoney *= 2;
+        if (state.adBonusActive) clickMoney *= 2;
+        return clickMoney;
+    }
+
+    function getMouseCost() {
+        const lvl = state.mouseClickLevel;
+        if (lvl === 1) return 500;
+        if (lvl === 2) return 1000;
+        if (lvl === 3) return 2000;
+        if (lvl === 4) return 3000;
+        return 3000 + (lvl - 4) * 1000;
+    }
+
+    function getAutoClickNextCost() {
+        const n = state.autoClickPurchases;
+        if (n === 0) return 100;
+        if (n === 1) return 200;
+        if (n === 2) return 400;
+        if (n === 3) return 600;
+        if (n === 4) return 800;
+        if (n === 5) return 1000;
+        if (n === 6) return 1300;
+        if (n === 7) return 1600;
+        if (n === 8) return 1900;
+        if (n === 9) return 2200;
+        return 2200 + (n - 9) * 300;
+    }
+
+    // ============================================================
+    //  УВЕДОМЛЕНИЯ
+    // ============================================================
+    function showMoneyLoss(x, y, text) {
+        const popup = document.createElement('div');
+        popup.className = 'money-popup';
+        popup.textContent = text;
+        popup.style.left = x + 'px';
+        popup.style.top = y + 'px';
+        document.body.appendChild(popup);
+        setTimeout(() => popup.remove(), 1000);
+    }
+
+    function showNotification(text) {
+        const old = document.querySelector('.ad-notification');
+        if (old) old.remove();
+        const div = document.createElement('div'); div.className = 'ad-notification'; div.textContent = text;
+        document.body.appendChild(div);
+        setTimeout(() => { if (div.parentNode) div.remove(); }, 2500);
+    }
+
+    // ============================================================
+    //  КЛЯКСЫ ПРИ КЛИКЕ
+    // ============================================================
+    const DROP_COLORS = [
+        '#ff44aa', '#44aaff', '#44ff88', '#ffcc44',
+        '#cc44ff', '#ff6644', '#44ffdd', '#ff4488',
+        '#ffffff', '#f0f0ff'
+    ];
+
+    function spawnSplash(clientX, clientY) {
+        const drop = document.createElement('div');
+        drop.className = 'drop';
+        const color = DROP_COLORS[Math.floor(Math.random() * DROP_COLORS.length)];
+        drop.style.left = clientX + 'px';
+        drop.style.top = clientY + 'px';
+        drop.style.background = color;
+        drop.style.color = color;
+        document.body.appendChild(drop);
+        setTimeout(() => drop.remove(), 850);
+
+        const particleCount = 8;
+        for (let i = 0; i < particleCount; i++) {
+            const p = document.createElement('div');
+            p.className = 'splash-particle';
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 30 + Math.random() * 55;
+            const dx = Math.cos(angle) * distance;
+            const dy = Math.sin(angle) * distance;
+            const pColor = DROP_COLORS[Math.floor(Math.random() * DROP_COLORS.length)];
+            p.style.left = clientX + 'px';
+            p.style.top = clientY + 'px';
+            p.style.background = pColor;
+            p.style.color = pColor;
+            p.style.setProperty('--dx', dx + 'px');
+            p.style.setProperty('--dy', dy + 'px');
+            document.body.appendChild(p);
+            setTimeout(() => p.remove(), 800);
+        }
+    }
+
+    // ============================================================
+    //  ИГРОВАЯ ЛОГИКА
+    // ============================================================
+    function checkLevelUp() {
+        if (state.levelClicks >= state.levelTarget) {
+            state.levelClicks -= state.levelTarget;
+            state.level++;
+            state.levelTarget = Math.floor(state.levelTarget * 1.5) + 50;
+            state.isWinMode = true;
+            forceIdleState();
+            showNotification(`🎉 УРОВЕНЬ ${state.level} ДОСТИГНУТ!`);
+            setTimeout(() => {
+                state.isWinMode = false;
+                updateSprite();
+                updateUI();
+            }, 1000);
+            updateUI();
+            saveState();
+        }
+    }
+
+    function doPuff(clientX, clientY) {
+        startBgMusic();
+        playRandomSfx();
+
+        setActiveState();
+        let gain = getClickValue();
+        state.money += gain;
+        state.totalClicks++;
+        state.levelClicks++;
+        checkLevelUp();
+
+        spawnSplash(clientX, clientY);
+        updateUI(false);
+    }
+
+    // ===== Автоклик: 1 раз в секунду, ровное начисление =====
+    setInterval(() => {
+        if (!state.isPageVisible) return;
+        const rate = getAutoRate();
+        if (rate <= 0) return;
+        state.money += rate;
+        updateUI(false);
+    }, 1000);
+
+    setInterval(saveState, 5000);
+    window.addEventListener('beforeunload', saveState);
+
+    // ============================================================
+    //  ПАУЗА ПРИ ПЕРЕКЛЮЧЕНИИ ВКЛАДКИ
+    // ============================================================
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            state.isPageVisible = false;
+            if (audio.bg && !audio.bg.paused) {
+                audio.bg.pause();
+            }
+            saveState();
+        } else {
+            state.isPageVisible = true;
+            if (audio.musicOn && audio.bgStarted) {
+                audio.bg.play().catch(() => {});
+            }
+        }
+    });
+
+    // ============================================================
+    //  МАГАЗИН
+    // ============================================================
+    function renderShop() {
+        let html = '';
+
+        let currentAutoCost = getAutoClickNextCost();
+        let canBuyAuto = state.money >= currentAutoCost;
+
+        html += `
+            <div class="shop-item">
+                <div class="info">
+                    <div class="name">⚡ Автоклик +1/сек</div>
+                    <div class="desc">Дает +1 монету в секунду</div>
+                </div>
+                <div class="price">💰${currentAutoCost}</div>
+                <button class="buy-btn" id="buyAuto" ${canBuyAuto ? '' : 'disabled'}>Купить</button>
+            </div>`;
+
+        const mouseCost = getMouseCost();
+        const canBuyMouse = state.money >= mouseCost;
+        html += `
+            <div class="shop-item">
+                <div class="info">
+                    <div class="name">🖱️ Мышка +1</div>
+                    <div class="desc">Улучшает клик мышкой на +1</div>
+                </div>
+                <div class="price">💰${mouseCost}</div>
+                <button class="buy-btn" id="buyMouse" ${canBuyMouse ? '' : 'disabled'}>Купить</button>
+            </div>`;
+
+        if (state.level < 3) {
+            html += `
+                <div class="shop-item locked-item">
+                    <div class="info">
+                        <div class="name">????</div>
+                        <div class="desc">Откроется на 3 ур.</div>
+                    </div>
+                    <button class="buy-btn" disabled>🔒</button>
+                </div>`;
+        } else if (state.autoClickTier2) {
+            html += `
+                <div class="shop-item">
+                    <div class="info">
+                        <div class="name">🔥 Мощный Автоклик +5/сек</div>
+                        <div class="desc">Уже куплено</div>
+                    </div>
+                    <div class="price">✅</div>
+                </div>`;
+        } else {
+            let canBuy = state.money >= 2400;
+            html += `
+                <div class="shop-item">
+                    <div class="info">
+                        <div class="name">🔥 Мощный Автоклик +5/сек</div>
+                        <div class="desc">Дает +5 монет в секунду</div>
+                    </div>
+                    <div class="price">💰2400</div>
+                    <button class="buy-btn" id="buyTier2" ${canBuy ? '' : 'disabled'}>Купить</button>
+                </div>`;
+        }
+
+        if (state.level < 5) {
+            html += `
+                <div class="shop-item locked-item">
+                    <div class="info">
+                        <div class="name">????</div>
+                        <div class="desc">Откроется на 5 ур.</div>
+                    </div>
+                    <button class="buy-btn" disabled>🔒</button>
+                </div>`;
+        } else if (state.autoClickTier3) {
+            html += `
+                <div class="shop-item">
+                    <div class="info">
+                        <div class="name">🔥 Мощный Автоклик +15/сек</div>
+                        <div class="desc">Уже куплено</div>
+                    </div>
+                    <div class="price">✅</div>
+                </div>`;
+        } else {
+            let canBuy = state.money >= 5000;
+            html += `
+                <div class="shop-item">
+                    <div class="info">
+                        <div class="name">🔥 Мощный Автоклик +15/сек</div>
+                        <div class="desc">Дает +15 монет в секунду</div>
+                    </div>
+                    <div class="price">💰5000</div>
+                    <button class="buy-btn" id="buyTier3" ${canBuy ? '' : 'disabled'}>Купить</button>
+                </div>`;
+        }
+
+        if (state.level < 7) {
+            html += `
+                <div class="shop-item locked-item">
+                    <div class="info">
+                        <div class="name">????</div>
+                        <div class="desc">Откроется на 7 ур.</div>
+                    </div>
+                    <button class="buy-btn" disabled>🔒</button>
+                </div>`;
+        } else if (state.autoClickTier4) {
+            html += `
+                <div class="shop-item">
+                    <div class="info">
+                        <div class="name">🔥 Мощный Автоклик +35/сек</div>
+                        <div class="desc">Уже куплено</div>
+                    </div>
+                    <div class="price">✅</div>
+                </div>`;
+        } else {
+            let canBuy = state.money >= 9000;
+            html += `
+                <div class="shop-item">
+                    <div class="info">
+                        <div class="name">🔥 Мощный Автоклик +35/сек</div>
+                        <div class="desc">Дает +35 монет в секунду</div>
+                    </div>
+                    <div class="price">💰9000</div>
+                    <button class="buy-btn" id="buyTier4" ${canBuy ? '' : 'disabled'}>Купить</button>
+                </div>`;
+        }
+
+        shopItems.innerHTML = html;
+
+        const buyAuto = document.getElementById('buyAuto');
+        if (buyAuto) {
+            buyAuto.addEventListener('click', (e) => {
+                let cost = getAutoClickNextCost();
+                if (state.money < cost) {
+                    showNotification(`❌ Не хватает монет! Нужно: ${cost}`);
+                    return;
+                }
+                state.money -= cost;
+                showMoneyLoss(e.clientX, e.clientY, `-${cost}`);
+                showNotification(`⚡ Автоклик +1/сек!`);
+                state.autoClickLevel++;
+                state.autoClickPurchases++;
+                updateUI();
+                saveState();
+            });
+        }
+
+        const buyMouse = document.getElementById('buyMouse');
+        if (buyMouse) {
+            buyMouse.addEventListener('click', (e) => {
+                let cost = getMouseCost();
+                if (state.money < cost) {
+                    showNotification(`❌ Не хватает монет! Нужно: ${cost}`);
+                    return;
+                }
+                state.money -= cost;
+                showMoneyLoss(e.clientX, e.clientY, `-${cost}`);
+                state.mouseClickLevel++;
+                showNotification(`🖱️ Клик теперь дает +${5 + (state.mouseClickLevel - 1)}!`);
+                updateUI();
+                saveState();
+            });
+        }
+
+        const buyTier2 = document.getElementById('buyTier2');
+        if (buyTier2) {
+            buyTier2.addEventListener('click', (e) => {
+                if (state.money < 2400) {
+                    showNotification(`❌ Не хватает монет! Нужно: 2400`);
+                    return;
+                }
+                state.money -= 2400;
+                showMoneyLoss(e.clientX, e.clientY, `-2400`);
+                state.autoClickTier2 = true;
+                showNotification(`🔥 Мощный автоклик +5/сек куплен!`);
+                updateUI();
+                saveState();
+            });
+        }
+
+        const buyTier3 = document.getElementById('buyTier3');
+        if (buyTier3) {
+            buyTier3.addEventListener('click', (e) => {
+                if (state.money < 5000) {
+                    showNotification(`❌ Не хватает монет! Нужно: 5000`);
+                    return;
+                }
+                state.money -= 5000;
+                showMoneyLoss(e.clientX, e.clientY, `-5000`);
+                state.autoClickTier3 = true;
+                showNotification(`🔥 Мощный автоклик +15/сек куплен!`);
+                updateUI();
+                saveState();
+            });
+        }
+
+        const buyTier4 = document.getElementById('buyTier4');
+        if (buyTier4) {
+            buyTier4.addEventListener('click', (e) => {
+                if (state.money < 9000) {
+                    showNotification(`❌ Не хватает монет! Нужно: 9000`);
+                    return;
+                }
+                state.money -= 9000;
+                showMoneyLoss(e.clientX, e.clientY, `-9000`);
+                state.autoClickTier4 = true;
+                showNotification(`🔥 Мощный автоклик +35/сек куплен!`);
+                updateUI();
+                saveState();
+            });
+        }
+    }
+
+    // ============================================================
+    //  ДЕВУШКИ
+    // ============================================================
+    function renderGirls() {
+        let html = '<div class="girls-grid">';
+        girls.forEach((girl, idx) => {
+            const unlocked = state.level >= girlsUnlockLevel[idx];
+            const isActive = state.girlIndex === idx;
+            const isOwned = state.ownedGirls[idx];
+            
+            if (!unlocked) {
+                const specialClass = girl.special ? ' special' : '';
+                html += `
+                    <div class="girl-card locked${specialClass}">
+                        <div class="girl-avatar">?</div>
+                        <div class="girl-name">????</div>
+                        <div class="girl-status">Ур. ${girlsUnlockLevel[idx]}</div>
+                    </div>`;
+            } else {
+                const specialClass = girl.special ? ' special' : '';
+                const statusClass = girl.special ? ' special-status' : '';
+                const statusText = isOwned 
+                    ? (isActive ? '✅' : 'Выбрать') 
+                    : `💰${girl.cost}`;
+                html += `
+                    <div class="girl-card ${isActive ? 'active' : ''}${specialClass}" data-index="${idx}">
+                        <div class="girl-avatar">${girl.emoji}</div>
+                        <div class="girl-name">${girl.name}</div>
+                        <div class="girl-status${statusClass}">${statusText}</div>
+                    </div>`;
+            }
+        });
+        html += '</div>';
+        shopItems.innerHTML = html;
+
+        shopItems.querySelectorAll('.girl-card:not(.locked)').forEach(card => {
+            card.addEventListener('click', function(e) {
+                const idx = parseInt(this.dataset.index);
+                const girl = girls[idx];
+                if (state.ownedGirls[idx]) {
+                    state.girlIndex = idx;
+                    showNotification(`👧 ${girl.name} выбрана!`);
+                    updateUI();
+                    saveState();
+                    return;
+                }
+                if (state.money < girl.cost) {
+                    showNotification(`❌ Не хватает монет! Нужно: ${girl.cost}`);
+                    return;
+                }
+                state.money -= girl.cost;
+                showMoneyLoss(e.clientX, e.clientY, `-${girl.cost}`);
+                state.ownedGirls[idx] = true;
+                state.girlIndex = idx;
+                showNotification(`🎉 ${girl.name} присоединилась!`);
+                updateUI();
+                saveState();
+            });
+        });
+    }
+
+    // ============================================================
+    //  ПАНЕЛИ
+    // ============================================================
+    function switchPanel(panel) {
+        state.currentPanel = panel;
+        if (panel === 'shop') {
+            btnShop.classList.add('active');
+            btnGirls.classList.remove('active');
+        } else {
+            btnGirls.classList.add('active');
+            btnShop.classList.remove('active');
+        }
+        updateUI();
+    }
+
+    btnShop.addEventListener('click', () => switchPanel('shop'));
+    btnGirls.addEventListener('click', () => switchPanel('girls'));
+
+    // ============================================================
+    //  БОНУСЫ ЧЕРЕЗ РЕКЛАМУ
+    // ============================================================
+
+    // --- Бонус x2 (30 сек) ---
+    function activateAdBonus() {
+        if (state.adBonusActive) {
+            showNotification('⏳ Бонус уже активен!');
+            return;
+        }
+
+        showRewarded(() => {
+            state.adBonusActive = true;
+            state.adBonusTimer = 30;
+            showNotification('🎁 БОНУС x2 АКТИВИРОВАН на 30 секунд!');
+            adBonusBtn.innerHTML = `📺 БОНУС x2<small>активен</small>`;
+            adBonusBtn.classList.add('bonus-active');
+
+            const bonusInterval = setInterval(() => {
+                state.adBonusTimer--;
+                adBonusBtn.innerHTML = `📺 БОНУС x2 (${Math.ceil(state.adBonusTimer)}с)<small>за просмотр рекламы</small>`;
+
+                if (state.adBonusTimer <= 0) {
+                    state.adBonusActive = false;
+                    clearInterval(bonusInterval);
+                    adBonusBtn.innerHTML = `📺 БОНУС x2<small>за просмотр рекламы</small>`;
+                    adBonusBtn.classList.remove('bonus-active');
+                    showNotification('⏰ Бонус закончился!');
+                    updateUI();
+                }
+            }, 1000);
+
+            updateUI();
+        });
+    }
+
+    // --- Спец-поза (15 сек) ---
+    function activateSpecMode() {
+        if (state.specMode) {
+            showNotification('🔥 Спец-поза уже активна!');
+            return;
+        }
+
+        showRewarded(() => {
+            showNotification('🔥 СПЕЦ-ПОЗА АКТИВИРОВАНА! x2 к деньгам!');
+            state.specMode = true;
+            state.specTimer = 15;
+            adSpecBtn.innerHTML = `🔥 СПЕЦ-ПОЗА ${Math.ceil(state.specTimer)}с<small>активна</small>`;
+            adSpecBtn.classList.add('spec-active');
+            forceIdleState();
+
+            const specInterval = setInterval(() => {
+                state.specTimer--;
+                adSpecBtn.innerHTML = `🔥 СПЕЦ-ПОЗА ${Math.ceil(state.specTimer)}с<small>за просмотр рекламы</small>`;
+
+                if (state.specTimer <= 0) {
+                    state.specMode = false;
+                    clearInterval(specInterval);
+                    adSpecBtn.innerHTML = `🔥 СПЕЦ-ПОЗА<small>за просмотр рекламы</small>`;
+                    adSpecBtn.classList.remove('spec-active');
+                    forceIdleState();
+                    showNotification('⏰ Спец-поза закончилась!');
+                    updateUI();
+                }
+            }, 1000);
+
+            updateUI();
+        });
+    }
+
+    // --- +2500 монет ---
+    function activateAdMoney() {
+        showRewarded(() => {
+            state.money += 2500;
+            showNotification('🎁 +2500 монет за просмотр рекламы!');
+            updateUI();
+            saveState();
+        });
+    }
+
+    adBonusBtn.addEventListener('click', activateAdBonus);
+    adSpecBtn.addEventListener('click', activateSpecMode);
+    adMoneyBtn.addEventListener('click', activateAdMoney);
+
+    // ============================================================
+    //  ОБРАБОТЧИКИ КЛИКОВ
+    // ============================================================
+    function onPressStart(e) {
+        e.preventDefault();
+        let clientX, clientY;
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+        doPuff(clientX, clientY);
+    }
+    function onPressEnd(e) { e.preventDefault(); setIdleState(); }
+
+    characterBox.addEventListener('mousedown', onPressStart);
+    characterBox.addEventListener('mouseup', onPressEnd);
+    characterBox.addEventListener('mouseleave', onPressEnd);
+    characterBox.addEventListener('touchstart', onPressStart, { passive: false });
+    characterBox.addEventListener('touchend', onPressEnd, { passive: false });
+    characterBox.addEventListener('touchcancel', onPressEnd, { passive: false });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' || e.key === 'Enter') { 
+            e.preventDefault();
+            const rect = characterBox.getBoundingClientRect();
+            doPuff(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        }
+    });
+    document.addEventListener('keyup', (e) => {
+        if (e.code === 'Space' || e.key === 'Enter') { e.preventDefault(); setIdleState(); }
+    });
+
+    // ============================================================
+    //  ОБНОВЛЕНИЕ UI
+    // ============================================================
+    function updateUI(redrawShop = true) {
+        moneySpan.textContent = Math.floor(state.money);
+        levelNum.textContent = state.level;
+        levelFill.style.width = (state.levelClicks / state.levelTarget * 100) + '%';
+        levelClicks.textContent = Math.floor(state.levelClicks);
+        levelTarget.textContent = state.levelTarget;
+        
+        autoRateDisplay.textContent = `+${Math.floor(getAutoRate())} монет/сек`;
+
+        if (redrawShop) {
+            if (state.currentPanel === 'girls') {
+                renderGirls();
+            } else {
+                renderShop();
+            }
+        }
+
+        updateSprite();
+    }
+
+    updateUI();
+
+    // ============================================================
+    //  СТАРТ VK BRIDGE
+    // ============================================================
+    initVKBridge();
+
+    console.log('💨 КЛИКЕР ЗАГРУЖЕН!');
+</script>
+</body>
+</html>
